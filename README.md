@@ -16,11 +16,11 @@ The ESP D1 mini operates a small 433.31 Mhz transmitter, I used a CC1101 one.
 
 <img src="https://user-images.githubusercontent.com/5008440/131185271-522b3dfc-2b23-4d4f-8156-b0d0ea1be165.png" alt="drawing" width="200"/>
 
-This transmitter has the advantage that you do not need to change the crystal to operate on the Somfy frequency, as its frequencies can be programmed over the whole 433Mhz band. I tried two different ones, they both worked. Note that because you operate it as a second transmitter, you need to "add" this transmitter following the manual of your sunshade. I had to "longpress" the PROG button on my original, and then press "PROG" on my newly built transdmitter. After this you can use both transmitters, allthough you cannot see the position of your sunshade like the ESP can.
+This transmitter has the advantage that you do not need to change the crystal to operate on the Somfy frequency, as its frequencies can be programmed over the whole 433Mhz band. I tried two different ones, they both worked. Note that because you operate it as a second transmitter, you need to "add" this transmitter following the manual of your sunshade. I had to "longpress" the PROG button on my original, and then press "PROG" on my newly built transdmitter. After this you can use both transmitters, allthough you cannot see the position of your sunshade on your app if you use the Somfy remote. Only if you use the ESP for moving the shade you will see the position on your phone.
 
 # Configuration
 
-For setting calculating the actual position, you need to configure the time it takes to open and close your sunshade. These parameters are in the config file, as well as all the other parameters, like for your wifi, your mqtt server and the topics yuo want to use. All parameters are set as #define 's in the SomfyMQTT.h file. I provide a "example"file called SomfyMQTT.EXAMPLE.h You need to rename this file and edit it to your needs.
+For setting calculating the actual position, you need to configure the time it takes to open and close your sunshade. These parameters are in the config file, as well as all the other parameters, like for your wifi, your mqtt server and the topics yuo want to use. All parameters are set as #define 's in the SomfyMQTT.config.h file. I provide a "example"file called SomfyMQTT.config.EXAMPLE.h You need to rename this file and edit it to your needs.
 
 # Uploading
 
