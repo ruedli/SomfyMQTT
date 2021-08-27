@@ -32,9 +32,9 @@ Requires this CC1101, the ESP D1 mini and the defined 8 wires between them and a
 
 # libraries used
 
-Mentioned CC1101 driver: https://github.com/LSatan/SmartRC-CC1101-Driver-Lib
-Somfy remote: https://github.com/Legion2/Somfy_Remote_Lib.git
-MQTT: https://github.com/knolleary/pubsubclient.git
+- Mentioned CC1101 driver: https://github.com/LSatan/SmartRC-CC1101-Driver-Lib
+- Somfy remote: https://github.com/Legion2/Somfy_Remote_Lib.git
+- MQTT: https://github.com/knolleary/pubsubclient.git
 
 and other standard Arduino libraries, like for the ESP8266, WiFi, OTA updates etc.
 
