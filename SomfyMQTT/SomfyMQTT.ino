@@ -2,12 +2,16 @@
  */
 
 #define Version_major 1
-#define Version_minor 1
- 
+#define Version_minor 2
  /*
  *  v1.0 - 25 aug 2021
  *    Initial release 
  *
+ *  v1.1 - 27 aug 2021
+ *    Packaged and Published on github
+ *
+ *  v1.1 - 28 aug 2021
+ *    Buttons released when movement stops
  */
  
  /* Libraries used:
@@ -110,6 +114,7 @@ unsigned long lastMsg = 0;
 unsigned long TimerLED = 0;
 unsigned long TimePositioned = 0;
 unsigned long TimePositionReported = 0;
+unsigned long TimeInitialized = millis();
 
 // The state of the info LED
 #ifdef PinLED
@@ -118,6 +123,7 @@ bool LED_on = false;
 #endif
 
 PosState State = Unknown;
+PosState LastState = Unknown;
 button BPressed = None;
 
 //Positioning stuff
@@ -125,6 +131,12 @@ int Position = 0;
 int Target = 0;
 int StartPos = 0;
 int LastPositionReported = 0;	//ensures the position is initialized FROM mqtt.
+
+//	These allow the bridge to publish a button position to reflect a GUI without operating the sunshade
+bool IgnoreOneDown = false;
+bool IgnoreOneUp = false;
+bool IgnoreOneMy = true;		// No "stop" beforde movement.
+bool IgnoreOneTarget = true; 	// Avoid problems during initialization of position, when target arrives before position.
 
 bool TryToInitializePosition = true; //Try to subscribe and get the position once.
 
@@ -264,26 +276,44 @@ void callback(char* topic, byte* payload, unsigned int length) {
 
 	// Set BPressed folowing the mesage received.
 	if (strcmp(topic, mqtt_RolloButtonTopic) == 0) {
-		if ((char)payload[0] == 'D') {
-			BPressed = Down;
-		} else if ((char)payload[0] == 'U'){
-			BPressed = Up;  
+		if ((char)payload[0] == 'U') {
+				if (IgnoreOneUp) {
+				IgnoreOneUp=false;
+			} else {
+				BPressed = Up;
+			}				
+		} else if ((char)payload[0] == 'D'){
+			if (IgnoreOneDown) {
+				IgnoreOneDown=false;
+			} else {
+				BPressed = Down;
+			}				
 		} else if ((char)payload[0] == 'M'){
-			BPressed = My;  
+			if (IgnoreOneMy) {
+				// do nothing
+			} else {
+				BPressed = My;
+			}
 		} else if ((char)payload[0] == 'P'){
 			BPressed = Prog; 
 		} else if ((char)payload[0] == 'L'){
 			BPressed = LProg; 
 		}
 	} else if (strcmp(topic, mqtt_RolloTargetTopic) == 0) {
-		payload[sizeof(payload)] = '\0'; // NULL terminate the array
-		if ((char)payload[0] != '-') {
-			Target = atoi((char *)payload);
-			BPressed = GotoTarget;
-			#ifdef debug_
-			snprintf (msg, MSG_BUFFER_SIZE, "Target obtained: %1d \n",Target);
-			logger(msg); 
-			#endif
+		if (IgnoreOneTarget) {
+			IgnoreOneTarget = false;
+		} else {
+			payload[sizeof(payload)] = '\0'; // NULL terminate the array
+			if ((char)payload[0] != '-') {
+				Target = atoi((char *)payload);
+				if (Target != Position) {
+					BPressed = GotoTarget;
+					#ifdef debug_
+					snprintf (msg, MSG_BUFFER_SIZE, "Target obtained: %1d \n",Target);
+					logger(msg); 
+					#endif
+				}
+			}
 		}
 
 	} else if (strcmp(topic, mqtt_RolloPositionTopic) == 0) {
@@ -293,6 +323,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 			StartPos = Position;
 			Target = Position;
 			State = Positioned;
+			IgnoreOneTarget = false; //Now it is safe to receive the target.
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position initialized: %1d \n",Position);
 			logger(msg);			
@@ -302,8 +333,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
 		client.unsubscribe(mqtt_RolloPositionTopic);	
 	}
 }
-
-
 
 void reconnect() {
   // Loop until we're reconnected
@@ -390,31 +419,55 @@ void loop() {
 	if ((BPressed==Up) or ((BPressed==GotoTarget) and (Target==0))){
 		const Command command = getSomfyCommand("Up");
 		sendCC1101Command(command);		
-		BPressed=None;
-		State = MovingUp;
 		TimePositioned = now;
 		StartPos=Position;
+		
+		IgnoreOneMy=false;	// Stopping is allowed now. 
+		
+		// Reflect the button pressed
+		if (BPressed==GotoTarget) {
+			IgnoreOneUp = true;
+			client.publish(mqtt_RolloButtonTopic, "U");
+		}
+
+		BPressed=None;
+		State = MovingUp;
+		
 		#ifdef debug_
 		logger("Up event scheduled");
 		#endif
-		client.publish(mqtt_RolloButtonTopic, "-");
+
 	} else if ((BPressed==Down) or ((BPressed==GotoTarget) and (Target==100))) {
 		const Command command = getSomfyCommand("Down");
 		sendCC1101Command(command);		
-		BPressed=None;
-		State = MovingDown;
 		TimePositioned = now;		
 		StartPos=Position;
+
+		IgnoreOneMy=false;	// Stopping is allowed now. 
+		
+		// Reflect the button pressed
+		if (BPressed==GotoTarget) {
+			IgnoreOneDown = true;
+			client.publish(mqtt_RolloButtonTopic, "D");
+		}
+		
+		BPressed=None;
+		State = MovingDown;
+		
 		#ifdef debug_
 		logger("Down event scheduled");
 		#endif
-		client.publish(mqtt_RolloButtonTopic, "-");
+		
 	} else if (BPressed==My) {
 		const Command command = getSomfyCommand("My");
 		sendCC1101Command(command);
+		
+		IgnoreOneMy=true;	// Stopping is NOT allowed now. 
+		
 		#ifdef debug_
 		logger("My event scheduled");
 		#endif
+		
 		client.publish(mqtt_RolloButtonTopic, "-");
 	} else if (BPressed==Prog) {
 		const Command command = getSomfyCommand("Prog");
@@ -436,21 +489,31 @@ void loop() {
 		BPressed=None;
 		TimePositioned = now;
 		StartPos=Position;
-		client.publish(mqtt_RolloTargetTopic, "-");		
 		if (Position>Target) {
 			const Command command = getSomfyCommand("Up");
 			sendCC1101Command(command);		
 			State = PositioningUp;
 			StartPos=Position;
+			
+			IgnoreOneUp = true;
+			client.publish(mqtt_RolloButtonTopic, "U");
+			IgnoreOneMy=false;	// Stopping is allowed now. 
+			
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position UP from %1d to %2d \n",StartPos,Target);
 			logger(msg);
 			#endif
+			
 		} else if (Position<Target) {
 			const Command command = getSomfyCommand("Down");
 			sendCC1101Command(command);		
 			State = PositioningDown;
 			StartPos=Position;	
+
+			IgnoreOneDown = true;
+			client.publish(mqtt_RolloButtonTopic, "D");
+			IgnoreOneMy=false;	// Stopping is allowed now. 	
+			
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position DOWN from %1d to %2d \n",StartPos,Target);
 			logger(msg);
@@ -517,6 +580,19 @@ void loop() {
 		}
 	}
 	
+	if (LastState!=State) {
+		LastState = State;
+		if (State==Positioned) {
+			client.publish(mqtt_RolloButtonTopic, "-");
+			if (!IgnoreOneTarget) {
+				//Set target on server, without acting
+				IgnoreOneTarget	= true;
+				snprintf (msg, MSG_BUFFER_SIZE, "%ld",Position);
+				client.publish(mqtt_RolloTargetTopic, msg, true);
+			}
+		}
+
+	}		
 
 //	Cosmetic stuff, keep-alive, LED blinking etc.
 	if (now - lastMsg > mqtt_PublishInterval) {
