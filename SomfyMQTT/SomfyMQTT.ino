@@ -10,7 +10,7 @@
  *  v1.1 - 27 aug 2021
  *    Packaged and Published on github
  *
- *  v1.1 - 28 aug 2021
+ *  v1.2 - 28 aug 2021
  *    Buttons released when movement stops
  */
  
@@ -114,7 +114,6 @@ unsigned long lastMsg = 0;
 unsigned long TimerLED = 0;
 unsigned long TimePositioned = 0;
 unsigned long TimePositionReported = 0;
-unsigned long TimeInitialized = millis();
 
 // The state of the info LED
 #ifdef PinLED
