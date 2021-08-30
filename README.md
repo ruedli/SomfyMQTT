@@ -1,18 +1,18 @@
 # SomfyMQTT
-A bridge between (RF only) Somfy sunshade and an MQTT server
+** A bridge between (RF only) Somfy sunshades and an MQTT server
 
-The standard Telis 1 remote cannot be operated from a phone. Using an Arduido ESP D1 mini and a MQTT broker (I use Mosquitto installed in my NAS) it can be opearated thoruh the internet and is interoperable with homeautomation that can publish / subscribe MQTT topics.
+The standard Telis 1 remote cannot be operated remotely. Using an Arduido ESP D1 mini and a MQTT broker (I use Mosquitto installed in my NAS) it can be opearated through the internet and is interoperable with home automation that can publish / subscribe MQTT topics.
 
 # What does it look like
-I now operate it from an mqtt client app on my phone. I tried 4, they all work, I liked this one the best:
+I now operate it from an mqtt client app on my phone. I tried 5 different ones, they all worked, I liked this one the best:
 
 <img src="https://user-images.githubusercontent.com/5008440/131183767-46c8a141-2b65-4d07-93be-a9f0270f46f7.jpeg" alt="drawing" width="200"/>
 
-This allows to operate the sunshade through buttons, or by rotating the knob. The knob follows the actual position of the sunshade.
+This allows to operate the sunshade through buttons, or by rotating the knob. When it is moving, the knob follows the actual position of the sunshade (calculated based upon configured timing).
 
 # How does it interface with the sunshade
 
-The ESP D1 mini operates a small 433.31 Mhz transmitter, I used a CC1101 one. 
+The ESP D1 mini operates a small 433.42 Mhz transmitter, I used a CC1101 one. 
 
 <img src="https://user-images.githubusercontent.com/5008440/131185271-522b3dfc-2b23-4d4f-8156-b0d0ea1be165.png" alt="drawing" width="200"/>
 
