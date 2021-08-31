@@ -34,9 +34,11 @@ I have put the CC1101 module and the ESP D1 mini in a small 3D printed housing. 
 
 <img src="https://user-images.githubusercontent.com/5008440/131503027-5bb05671-1f7b-4d64-a86c-39be6e6e35e6.jpeg" alt="drawing" width="400"/>
 
-You simply screw it to the wall like this.
+You simply screw the lid to the wall like this.
 
 <img src="https://user-images.githubusercontent.com/5008440/131503241-67ea13c4-b2a7-4d68-b8d9-82d01b088b51.jpeg" alt="drawing" width="400"/>
+
+No supports are needed for any of these prints.
 
 # libraries used
 

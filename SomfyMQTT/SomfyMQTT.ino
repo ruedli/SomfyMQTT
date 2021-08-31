@@ -2,7 +2,7 @@
  */
 
 #define Version_major 1
-#define Version_minor 2
+#define Version_minor 3
  /*
  *  v1.0 - 25 aug 2021
  *    Initial release 
@@ -12,7 +12,14 @@
  *
  *  v1.2 - 28 aug 2021
  *    Buttons released when movement stops
- */
+ *
+ *  v1.3 - 31 aug 2021
+ *    small fix: setting the range and moving in small steps now works better. 
+ *	  Moving up would sometime step one step too many.
+ *
+ *    3D printing files added
+ *
+ /
  
  /* Libraries used:
  *
@@ -74,37 +81,6 @@ enum button {
 	Prog,
 	LProg
 };
-
-/*
-#ifdef debug_
-int LastPos=0;
-String ShowState(PosState mystate) {
-	switch (mystate) {
-		case Positioned:
-			return("Positioned");
-			break;
-		case MovingUp:
-			return("MovingUp");
-			break;
-		case MovingDown:
-			return("MovingDown");
-			break;
-		case PositioningUp:
-			return("PositioningUp");
-			break;
-		case PositioningDown:
-			return("PositioningDown");
-			break;
-		case Unknown:
-			return("Unknown");
-			break;
-		default:
-			return("ERRORSTATE");
-			break;
-	}
-}
-#endif
-*/		
 	
 char msg[MSG_BUFFER_SIZE];
 int counter=0;		//For counting the keep-alive-messages
@@ -522,7 +498,7 @@ void loop() {
 
 
 //	position calculation
-	if ((State == MovingUp) or (State == PositioningUp)) Position = StartPos - 100.0 * (now-TimePositioned) / (1000.0 * Somfy_Time2MoveFullyUp);
+	if ((State == MovingUp) or (State == PositioningUp)) Position = StartPos - 1 - 100.0 * (now-TimePositioned) / (1000.0 * Somfy_Time2MoveFullyUp);
 	
 	if ((State == MovingDown) or (State == PositioningDown)) Position = StartPos + 100.0 * (now-TimePositioned) / (1000.0 * Somfy_Time2MoveFullyDown);	
 
