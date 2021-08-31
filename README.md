@@ -30,6 +30,14 @@ The initial flash must be done through USB or a programmer. After that it suppor
 
 Requires this CC1101, the ESP D1 mini and the defined 8 wires between them and a 5V USB power source. Little S@tan describes how to hook this up with his library, you can see this here: https://github.com/LSatan/SmartRC-CC1101-Driver-Lib
 
+I have put the CC1101 module and the ESP D1 mini in a small 3D printed housing. The are 8 jumper cables between them I put them in two 8x1 Dupont holders for each sode of the ESP and one 2x4 Dupont holder for the CC1101.
+
+<img src="https://user-images.githubusercontent.com/5008440/131503027-5bb05671-1f7b-4d64-a86c-39be6e6e35e6.jpeg" alt="drawing" width="400"/>
+
+You simply screw it to the wall like this.
+
+<img src="https://user-images.githubusercontent.com/5008440/131503241-67ea13c4-b2a7-4d68-b8d9-82d01b088b51.jpeg" alt="drawing" width="400"/>
+
 # libraries used
 
 - Mentioned CC1101 driver: https://github.com/LSatan/SmartRC-CC1101-Driver-Lib
