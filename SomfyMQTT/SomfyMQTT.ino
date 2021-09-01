@@ -1,8 +1,8 @@
 /*  SomfyMQTT      
  */
 
-#define Version_major 1
-#define Version_minor 3
+#define Version_major 2
+#define Version_minor 1
  /*
  *  v1.0 - 25 aug 2021
  *    Initial release 
@@ -91,6 +91,49 @@ unsigned long TimerLED = 0;
 unsigned long TimePositioned = 0;
 unsigned long TimePositionReported = 0;
 
+class SomfyCommand { 
+	public:
+		Command Somfy;
+		char Topic[80];
+		char Target[1];
+
+		
+	
+		SomfyCommand(char *sCommand, char *sLocation, char *sDevice, char *sSubTopic) {
+			Somfy = getSomfyCommand(sCommand);
+			strcpy(Topic,sLocation);
+			strcat(Topic,"/");
+			strcat(Topic,sDevice);
+			strcat(Topic,"/");
+			strcat(Topic,sSubTopic);
+			
+			strncpy(Target,sCommand,1);
+			Target[1]='\0';
+				
+		}			//constructor
+		
+	
+	void SendRF() {
+		#ifdef debug_
+			Serial.print("Sending RF ");
+			Serial.println(Target);
+		#endif
+		ELECHOUSE_cc1101.SetTx();
+		somfyRemote.sendCommand(Somfy);
+		ELECHOUSE_cc1101.setSidle();
+	}
+		
+	void Publish() {
+		client.publish(Topic,Target);
+	}
+		
+	void Reset() {
+		client.publish(Topic,"-");
+		
+	}
+	
+};
+
 // The state of the info LED
 #ifdef PinLED
 int LED_count;
@@ -100,6 +143,12 @@ bool LED_on = false;
 PosState State = Unknown;
 PosState LastState = Unknown;
 button BPressed = None;
+
+//Somfy commands
+SomfyCommand SomfyUp("Up",mqtt_Location,mqtt_Device,mqtt_ButtonTopic);
+SomfyCommand SomfyDown("Down",mqtt_Location,mqtt_Device,mqtt_ButtonTopic);
+SomfyCommand SomfyMy("My",mqtt_Location,mqtt_Device,mqtt_ButtonTopic);
+SomfyCommand SomfyProg("Prog",mqtt_Location,mqtt_Device,mqtt_ButtonTopic);
 
 //Positioning stuff
 int Position = 0;
@@ -125,7 +174,7 @@ void logger(String log) {
 void setup_wifi() {
 
   delay(10);
-  // We start by connecting to a WiFi network
+  // We start by connecting to a WiFi networkhttps://www.w3schools.com/cpp/cpp_function_overloading.asp
   #ifdef debug_
   Serial.println();
   Serial.print("Connecting to ");
@@ -371,11 +420,14 @@ void setup() {
 
 }
 
-void sendCC1101Command(Command command) {
+/*
+void sendSomfyCc1101Command(char *command) {
+	const Command Scommand = getSomfyCommand(command);
 	ELECHOUSE_cc1101.SetTx();
-	somfyRemote.sendCommand(command);
+	somfyRemote.sendCommand(Scommand);
 	ELECHOUSE_cc1101.setSidle();
 }
+*/
 
 void loop() {
 	ArduinoOTA.handle();
@@ -392,8 +444,7 @@ void loop() {
 
 //	React to buttons pressed
 	if ((BPressed==Up) or ((BPressed==GotoTarget) and (Target==0))){
-		const Command command = getSomfyCommand("Up");
-		sendCC1101Command(command);		
+		SomfyUp.SendRF();
 		TimePositioned = now;
 		StartPos=Position;
 		
@@ -402,7 +453,7 @@ void loop() {
 		// Reflect the button pressed
 		if (BPressed==GotoTarget) {
 			IgnoreOneUp = true;
-			client.publish(mqtt_RolloButtonTopic, "U");
+			SomfyUp.Publish();
 		}
 
 		BPressed=None;
@@ -413,8 +464,7 @@ void loop() {
 		#endif
 
 	} else if ((BPressed==Down) or ((BPressed==GotoTarget) and (Target==100))) {
-		const Command command = getSomfyCommand("Down");
-		sendCC1101Command(command);		
+		SomfyDown.SendRF();
 		TimePositioned = now;		
 		StartPos=Position;
 
@@ -423,7 +473,7 @@ void loop() {
 		// Reflect the button pressed
 		if (BPressed==GotoTarget) {
 			IgnoreOneDown = true;
-			client.publish(mqtt_RolloButtonTopic, "D");
+			SomfyDown.Publish();
 		}
 		
 		BPressed=None;
@@ -434,27 +484,23 @@ void loop() {
 		#endif
 		
 	} else if (BPressed==My) {
-		const Command command = getSomfyCommand("My");
-		sendCC1101Command(command);
-		
+		SomfyMy.SendRF();
 		IgnoreOneMy=true;	// Stopping is NOT allowed now. 
 		
 		#ifdef debug_
 		logger("My event scheduled");
 		#endif
 		
-		client.publish(mqtt_RolloButtonTopic, "-");
+		SomfyMy.Reset();
 	} else if (BPressed==Prog) {
-		const Command command = getSomfyCommand("Prog");
-		sendCC1101Command(command);
+		SomfyProg.SendRF();
 		BPressed=None;
 		#ifdef debug_		
 		logger("Prog event sent");
 		#endif
 	} else if (BPressed==LProg) {
 		while ((millis()-now) < Somfy_LongPressTime) {
-			const Command command = getSomfyCommand("Prog");
-			sendCC1101Command(command);
+			SomfyProg.SendRF();
 		}
 		BPressed=None;
 		#ifdef debug_		
@@ -465,13 +511,12 @@ void loop() {
 		TimePositioned = now;
 		StartPos=Position;
 		if (Position>Target) {
-			const Command command = getSomfyCommand("Up");
-			sendCC1101Command(command);		
+			SomfyUp.SendRF();
 			State = PositioningUp;
 			StartPos=Position;
 			
 			IgnoreOneUp = true;
-			client.publish(mqtt_RolloButtonTopic, "U");
+			SomfyUp.Publish();
 			IgnoreOneMy=false;	// Stopping is allowed now. 
 			
 			#ifdef debug_
@@ -480,13 +525,12 @@ void loop() {
 			#endif
 			
 		} else if (Position<Target) {
-			const Command command = getSomfyCommand("Down");
-			sendCC1101Command(command);		
+			SomfyDown.SendRF();	
 			State = PositioningDown;
 			StartPos=Position;	
 
 			IgnoreOneDown = true;
-			client.publish(mqtt_RolloButtonTopic, "D");
+			SomfyDown.Publish();
 			IgnoreOneMy=false;	// Stopping is allowed now. 	
 			
 			#ifdef debug_
@@ -530,8 +574,7 @@ void loop() {
 	}
 		
 	if (((State == PositioningDown) and (Position>=Target)) or ((State == PositioningUp) and (Position<=Target))) {
-		const Command command = getSomfyCommand("My");
-		sendCC1101Command(command);
+		SomfyMy.SendRF();
 
 		#ifdef debug_
 		if (State == PositioningDown) snprintf (msg, MSG_BUFFER_SIZE, "Stopped moving down at Position: %1d, Target %2d \n",Position,Target);
@@ -558,7 +601,7 @@ void loop() {
 	if (LastState!=State) {
 		LastState = State;
 		if (State==Positioned) {
-			client.publish(mqtt_RolloButtonTopic, "-");
+			SomfyMy.Reset();;
 			if (!IgnoreOneTarget) {
 				//Set target on server, without acting
 				IgnoreOneTarget	= true;
