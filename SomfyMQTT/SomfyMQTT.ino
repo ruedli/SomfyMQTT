@@ -19,6 +19,12 @@
  *
  *    3D printing files added
  *
+ *	v2.1 - 1 sep 2021
+ *
+ *	  implemented button in a class
+ *
+ *	  simplified config file, instead of the whole string per topic, location and device are individually defined and separated from the topics.
+ *
  /
  
  /* Libraries used:
@@ -32,6 +38,13 @@
 // Include configuration
 #include "SomfyMQTT.config.h"
 
+// Process some defines for convenience
+// The below are calculated from SomfyMQTT.config.h, no need to maintain.
+#define mqtt_ESPstate 			mqtt_Location	"/"	 mqtt_Device "/" mqtt_StatusTopic	// Status messages and debug info (when enabled)		
+#define mqtt_RolloTargetTopic 	mqtt_Location	"/"	 mqtt_Device "/" mqtt_TargetTopic	// (WRITE) The position to go to
+#define mqtt_RolloPositionTopic	mqtt_Location	"/"	 mqtt_Device "/" mqtt_PositionTopic	// (READ) Actual position
+#define mqtt_RolloButtonTopic	mqtt_Location	"/"	 mqtt_Device "/" mqtt_ButtonTopic	// (WRITE) press button Up,Down,My,Prog,LongProg (U,D,M,P,L)
+                 
 #ifndef SomfyMQTT_config_version
 #error The version of the config file cannot be determined, ensure you copy SomfyMQTT.config.h from the latest SomfyMQTT.config.h.RELEASE
 #endif
@@ -92,13 +105,13 @@ unsigned long TimePositioned = 0;
 unsigned long TimePositionReported = 0;
 
 class SomfyCommand { 
-	public:
+	private:
 		Command Somfy;
 		char Topic[80];
-		char Target[1];
-
+		char Target[2];
+		bool enabled;
 		
-	
+	public:
 		SomfyCommand(char *sCommand, char *sLocation, char *sDevice, char *sSubTopic) {
 			Somfy = getSomfyCommand(sCommand);
 			strcpy(Topic,sLocation);
@@ -109,20 +122,30 @@ class SomfyCommand {
 			
 			strncpy(Target,sCommand,1);
 			Target[1]='\0';
+			enabled = true;
 				
 		}			//constructor
 		
-	
 	void SendRF() {
-		#ifdef debug_
-			Serial.print("Sending RF ");
-			Serial.println(Target);
-		#endif
-		ELECHOUSE_cc1101.SetTx();
-		somfyRemote.sendCommand(Somfy);
-		ELECHOUSE_cc1101.setSidle();
+		if (enabled){
+			ELECHOUSE_cc1101.SetTx();
+			somfyRemote.sendCommand(Somfy);
+			ELECHOUSE_cc1101.setSidle();
+		}
 	}
-		
+	
+	void Enable() {
+		enabled=true;
+	}
+	
+	void Disable() {
+		enabled=false;
+	}
+	
+	bool Enabled() {
+		return enabled;
+	}
+	
 	void Publish() {
 		client.publish(Topic,Target);
 	}
@@ -154,15 +177,11 @@ SomfyCommand SomfyProg("Prog",mqtt_Location,mqtt_Device,mqtt_ButtonTopic);
 int Position = 0;
 int Target = 0;
 int StartPos = 0;
-int LastPositionReported = 0;	//ensures the position is initialized FROM mqtt.
+int LastPositionReported = 0;		 //ensures the position is set on mqtt only when it has changed.
+bool TryToInitializePosition = true; //Try to subscribe and get the position once from previous sessions.
 
-//	These allow the bridge to publish a button position to reflect a GUI without operating the sunshade
-bool IgnoreOneDown = false;
-bool IgnoreOneUp = false;
-bool IgnoreOneMy = true;		// No "stop" beforde movement.
-bool IgnoreOneTarget = true; 	// Avoid problems during initialization of position, when target arrives before position.
-
-bool TryToInitializePosition = true; //Try to subscribe and get the position once.
+// This ensures that while moving no further targets are accepted
+bool TargetEnabled = false;
 
 #ifdef debug_
 void logger(String log) {
@@ -298,45 +317,29 @@ void callback(char* topic, byte* payload, unsigned int length) {
 	Serial.println();
 	#endif
 
-	// Set BPressed folowing the mesage received.
+	// Set BPressed folowing the message received.
 	if (strcmp(topic, mqtt_RolloButtonTopic) == 0) {
 		if ((char)payload[0] == 'U') {
-				if (IgnoreOneUp) {
-				IgnoreOneUp=false;
-			} else {
-				BPressed = Up;
-			}				
+			if (SomfyUp.Enabled()) BPressed = Up;
 		} else if ((char)payload[0] == 'D'){
-			if (IgnoreOneDown) {
-				IgnoreOneDown=false;
-			} else {
-				BPressed = Down;
-			}				
+			if (SomfyDown.Enabled()) BPressed = Down;
 		} else if ((char)payload[0] == 'M'){
-			if (IgnoreOneMy) {
-				// do nothing
-			} else {
-				BPressed = My;
-			}
+			if (SomfyMy.Enabled()) BPressed = My;
 		} else if ((char)payload[0] == 'P'){
 			BPressed = Prog; 
 		} else if ((char)payload[0] == 'L'){
 			BPressed = LProg; 
 		}
 	} else if (strcmp(topic, mqtt_RolloTargetTopic) == 0) {
-		if (IgnoreOneTarget) {
-			IgnoreOneTarget = false;
-		} else {
-			payload[sizeof(payload)] = '\0'; // NULL terminate the array
-			if ((char)payload[0] != '-') {
-				Target = atoi((char *)payload);
-				if (Target != Position) {
-					BPressed = GotoTarget;
-					#ifdef debug_
-					snprintf (msg, MSG_BUFFER_SIZE, "Target obtained: %1d \n",Target);
-					logger(msg); 
-					#endif
-				}
+		payload[sizeof(payload)] = '\0'; // NULL terminate the array
+		if ((char)payload[0] != '-') {
+			Target = atoi((char *)payload);
+			if (Target != Position) {
+				BPressed = GotoTarget;
+				#ifdef debug_
+				snprintf (msg, MSG_BUFFER_SIZE, "Target obtained: %1d \n",Target);
+				logger(msg); 
+				#endif
 			}
 		}
 
@@ -347,7 +350,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 			StartPos = Position;
 			Target = Position;
 			State = Positioned;
-			IgnoreOneTarget = false; //Now it is safe to receive the target.
+			TargetEnabled = true; //Now it is safe to receive the target.
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position initialized: %1d \n",Position);
 			logger(msg);			
@@ -414,8 +417,12 @@ void setup() {
 #endif
 
   setup_wifi();
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
+  
+//	This ensures that "My" is only (once) active when moving.
+	SomfyMy.Disable();		// No "stop" before movement.
+  
+	client.setServer(mqtt_server, mqtt_port);
+	client.setCallback(callback);
   
 
 }
@@ -448,14 +455,8 @@ void loop() {
 		TimePositioned = now;
 		StartPos=Position;
 		
-		IgnoreOneMy=false;	// Stopping is allowed now. 
+		SomfyMy.Enable();	// Stopping is allowed now. 
 		
-		// Reflect the button pressed
-		if (BPressed==GotoTarget) {
-			IgnoreOneUp = true;
-			SomfyUp.Publish();
-		}
-
 		BPressed=None;
 		State = MovingUp;
 		
@@ -468,13 +469,7 @@ void loop() {
 		TimePositioned = now;		
 		StartPos=Position;
 
-		IgnoreOneMy=false;	// Stopping is allowed now. 
-		
-		// Reflect the button pressed
-		if (BPressed==GotoTarget) {
-			IgnoreOneDown = true;
-			SomfyDown.Publish();
-		}
+		SomfyMy.Enable();	// Stopping is allowed now. 
 		
 		BPressed=None;
 		State = MovingDown;
@@ -485,7 +480,8 @@ void loop() {
 		
 	} else if (BPressed==My) {
 		SomfyMy.SendRF();
-		IgnoreOneMy=true;	// Stopping is NOT allowed now. 
+		
+		SomfyMy.Disable();	// Stopping is NOT allowed now. 
 		
 		#ifdef debug_
 		logger("My event scheduled");
@@ -515,9 +511,7 @@ void loop() {
 			State = PositioningUp;
 			StartPos=Position;
 			
-			IgnoreOneUp = true;
-			SomfyUp.Publish();
-			IgnoreOneMy=false;	// Stopping is allowed now. 
+			SomfyMy.Enable();	// Stopping is allowed now. 
 			
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position UP from %1d to %2d \n",StartPos,Target);
@@ -529,9 +523,7 @@ void loop() {
 			State = PositioningDown;
 			StartPos=Position;	
 
-			IgnoreOneDown = true;
-			SomfyDown.Publish();
-			IgnoreOneMy=false;	// Stopping is allowed now. 	
+			SomfyMy.Enable();	// Stopping is allowed now. 	
 			
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position DOWN from %1d to %2d \n",StartPos,Target);
@@ -559,22 +551,26 @@ void loop() {
 	#endif
 */
 	
-//	Fix out-of-bound positions
+//	Fix out-of-bound positions, no stopping anymore after this
 	if (Position < 0) {
 		Position = 0;
 		State = Positioned;
+		SomfyMy.Disable();
 	} else if (Position > 100) {
 		Position = 100;
 		State = Positioned;
+		SomfyMy.Disable();
 	} 
 
 	if (BPressed==My) {
 		BPressed=None;
 		State = Positioned;
+		SomfyMy.Disable();
 	}
 		
 	if (((State == PositioningDown) and (Position>=Target)) or ((State == PositioningUp) and (Position<=Target))) {
 		SomfyMy.SendRF();
+		SomfyMy.Disable();
 
 		#ifdef debug_
 		if (State == PositioningDown) snprintf (msg, MSG_BUFFER_SIZE, "Stopped moving down at Position: %1d, Target %2d \n",Position,Target);
@@ -602,12 +598,6 @@ void loop() {
 		LastState = State;
 		if (State==Positioned) {
 			SomfyMy.Reset();;
-			if (!IgnoreOneTarget) {
-				//Set target on server, without acting
-				IgnoreOneTarget	= true;
-				snprintf (msg, MSG_BUFFER_SIZE, "%ld",Position);
-				client.publish(mqtt_RolloTargetTopic, msg, true);
-			}
 		}
 
 	}		
