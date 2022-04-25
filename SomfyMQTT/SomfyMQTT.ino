@@ -2,7 +2,7 @@
  */
 
 #define Version_major 2
-#define Version_minor 1
+#define Version_minor 2
  /*
  *  v1.0 - 25 aug 2021
  *    Initial release 
@@ -24,6 +24,10 @@
  *	  implemented button in a class
  *
  *	  simplified config file, instead of the whole string per topic, location and device are individually defined and separated from the topics.
+ *
+ * v2.2 - 13 oct 2021
+ *
+ *	  Implemented handling for TWO buttons, currently only button1 one has functionality for moving the sunshade.
  *
  /
  
@@ -161,11 +165,30 @@ class SomfyCommand {
 #ifdef PinLED
 int LED_count;
 bool LED_on = false;
+bool LED_stat = false;
 #endif
 
 PosState State = Unknown;
 PosState LastState = Unknown;
 button BPressed = None;
+
+#ifdef Switch
+PosState LastMovement = Unknown;
+#endif
+
+#ifdef Pin1Switch
+bool ShortPress1;
+bool LongPress1;
+bool ButtonPressed1 = false;
+unsigned long LastPressed1 = 0;
+#endif
+
+#ifdef Pin2Switch
+bool ShortPress2;
+bool LongPress2;
+bool ButtonPressed2 = false;
+unsigned long LastPressed2 = 0;
+#endif
 
 //Somfy commands
 SomfyCommand SomfyUp("Up",mqtt_Location,mqtt_Device,mqtt_ButtonTopic);
@@ -186,7 +209,8 @@ bool TargetEnabled = false;
 #ifdef debug_
 void logger(String log) {
 	Serial.println(log);
-	client.publish(mqtt_ESPstate,log.c_str());
+	
+	//client.publish(mqtt_ESPstate,log.c_str());
 }
 #endif
 
@@ -235,7 +259,8 @@ void setup_wifi() {
 	analogWrite(PinLED, 0);
 	LED_count = 0;
 	LED_on = false;
-	digitalWrite(PinLED, LED_on ? LOW: HIGH);  // The LED is off...
+	LED_stat = false;
+	digitalWrite(PinLED, (LED_on or LED_stat) ? LOW: HIGH);  // The LED is off...
 	#endif
 	
   });
@@ -272,8 +297,6 @@ void setup_wifi() {
   });
   ArduinoOTA.begin();  
 
-//Initial state and timers for OctoPrintPlugout
-
 	#ifdef PinLED
 	// do a fancy thing with our board led when starting up
 	for (int i = 0; i < 30; i++) {
@@ -285,11 +308,11 @@ void setup_wifi() {
 	// Indicate the major and minor version
 	const int delays[] = { Version_major , Version_minor };
 	for (int i = 0; i <= 1; i++) {
-		delay(500);
+		delay(700);
 		for (int j = 1; j <= delays[i]; j++) {
-			delay(300);
+			delay(400);
 			digitalWrite(PinLED, LOW);  // The LED is on...
-			delay(50);
+			delay(100);
 			digitalWrite(PinLED, HIGH);  // The LED is off...
 		}
 	}
@@ -350,6 +373,9 @@ void callback(char* topic, byte* payload, unsigned int length) {
 			StartPos = Position;
 			Target = Position;
 			State = Positioned;
+			#ifdef Switch
+			LastMovement = MovingUp;
+			#endif
 			TargetEnabled = true; //Now it is safe to receive the target.
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position initialized: %1d \n",Position);
@@ -396,6 +422,15 @@ void setup() {
 	pinMode(PinLED, OUTPUT);
 	digitalWrite(PinLED, HIGH);  // The LED is off...
 	#endif
+	
+	#ifdef Pin1Switch
+	pinMode(Pin1Switch, INPUT);	
+	#endif
+	
+	#ifdef Pin2Switch
+	pinMode(Pin2Switch, INPUT);	
+	#endif	
+
 	Serial.begin(115200);
 	delay(1000);
 	Serial.flush();
@@ -448,8 +483,78 @@ void loop() {
 	
 /* Here is all movement and positioning calculated, it is a state machine going through states, issuing remote commands and updating the mqtt topics
 */
+	#ifdef Pin1Switch
+	// Evaluate button: debouncing after it is pressed
+	ShortPress1 = LongPress1 = false; // Reset
+	if ((now - LastPressed1) > debounce_interval) {
+		if (ButtonPressed1) {
+			if (digitalRead(Pin1Switch) == HIGH) {            //This means the button is (now) released
+				if ((now - LastPressed1) > long_press_time) { // Checking whether it is a short, or long button press
+					LongPress1 = true;
+					#ifdef debug_
+					logger("LONG press1");
+					#endif
+				} else {
+					ShortPress1 = true;
+					#ifdef debug_
+					logger("SHORT press1");
+					#endif
+				}
+				ButtonPressed1 = false;
+				LastPressed1 = now; 						// For debouncing
+				#ifdef debug_
+				logger("RELEASED 1");	
+				#endif					
+			}
+		} else {
+			if (digitalRead(Pin1Switch) == LOW) { 			//This means the button is (now) pressed
+				ButtonPressed1 = true;
+				LastPressed1 = now; 				 		// For debouncing
+				#ifdef debug_
+				logger("PRESSED 1");
+				#endif
+			}
+		}
+	}
+	#endif
+	#ifdef Pin2Switch
+	ShortPress2 = LongPress2 = false; // Reset
+	if ((now - LastPressed2) > debounce_interval) {
+		if (Button2Pressed) {
+			if (digitalRead(Pin2Switch) == HIGH) {            //This means the button is (now) released
+				if ((now - LastPressed2) > long_press_time) { // Checking whether it is a short, or long button press
+					LongPress2 = true;
+				} else {
+					ShortPress2 = true;
+				}
+				ButtonPressed2 = false;
+				LastPressed2 = now; 							// For debouncing
+			}
+		} else {
+			if (digitalRead(Pin2Switch) == LOW) { 			//This means the button is (now) pressed
+				ButtonPressed2 = true;
+				LastPressed2 = now; 				 			// For debouncing
+			}
+		}
+	}
+	#endif
+
 
 //	React to buttons pressed
+	#ifdef Switch
+	#if Switch==S120
+	if (State == Positioned) {
+		if (LongPress1) {
+			if (Position >= 100) BPressed = Up;
+			else if (LastMovement == MovingDown) BPressed = Down; else BPressed = Up;
+		} else if (ShortPress1) {
+			if (Position <= 0) BPressed = Down;
+			else if (LastMovement == MovingDown) BPressed = Up; else BPressed = Down;	
+		}
+	} else if (LongPress1 or ShortPress1) BPressed = My;	
+	#endif
+	#endif
+	
 	if ((BPressed==Up) or ((BPressed==GotoTarget) and (Target==0))){
 		SomfyUp.SendRF();
 		TimePositioned = now;
@@ -459,10 +564,16 @@ void loop() {
 		
 		BPressed=None;
 		State = MovingUp;
+		#ifdef Switch
+		LastMovement = MovingUp;
+		#endif
 		
 		#ifdef debug_
 		logger("Up event scheduled");
 		#endif
+		
+		//Switch on LED
+		LED_stat = true;
 
 	} else if ((BPressed==Down) or ((BPressed==GotoTarget) and (Target==100))) {
 		SomfyDown.SendRF();
@@ -473,10 +584,17 @@ void loop() {
 		
 		BPressed=None;
 		State = MovingDown;
+		#ifdef Switch
+		LastMovement = MovingDown;
+		#endif
 		
 		#ifdef debug_
 		logger("Down event scheduled");
 		#endif
+
+		//Switch on LED
+		LED_stat = true;
+
 		
 	} else if (BPressed==My) {
 		SomfyMy.SendRF();
@@ -486,6 +604,10 @@ void loop() {
 		#ifdef debug_
 		logger("My event scheduled");
 		#endif
+		
+		//Switch off LED
+		LED_stat = false;
+
 		
 		SomfyMy.Reset();
 	} else if (BPressed==Prog) {
@@ -511,24 +633,40 @@ void loop() {
 			State = PositioningUp;
 			StartPos=Position;
 			
+			#ifdef Switch
+			LastMovement = MovingUp;
+			#endif
+
+			
 			SomfyMy.Enable();	// Stopping is allowed now. 
 			
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position UP from %1d to %2d \n",StartPos,Target);
 			logger(msg);
 			#endif
-			
+
+			//Switch on LED
+			LED_stat = true;
+
 		} else if (Position<Target) {
 			SomfyDown.SendRF();	
 			State = PositioningDown;
 			StartPos=Position;	
+
+			#ifdef Switch
+			LastMovement = MovingDown;
+			#endif
 
 			SomfyMy.Enable();	// Stopping is allowed now. 	
 			
 			#ifdef debug_
 			snprintf (msg, MSG_BUFFER_SIZE, "Position DOWN from %1d to %2d \n",StartPos,Target);
 			logger(msg);
-			#endif
+			#endif			
+
+			//Switch on LED
+			LED_stat = true;
+
 		}
 	}
 
@@ -556,22 +694,30 @@ void loop() {
 		Position = 0;
 		State = Positioned;
 		SomfyMy.Disable();
+		//Switch off LED
+		LED_stat = false;
+
 	} else if (Position > 100) {
 		Position = 100;
 		State = Positioned;
 		SomfyMy.Disable();
-	} 
-
+		//Switch off LED
+		LED_stat = false;
+	}		
 	if (BPressed==My) {
 		BPressed=None;
 		State = Positioned;
 		SomfyMy.Disable();
+		//Switch off LED
+		LED_stat = false;
 	}
-		
+
 	if (((State == PositioningDown) and (Position>=Target)) or ((State == PositioningUp) and (Position<=Target))) {
 		SomfyMy.SendRF();
 		SomfyMy.Disable();
-
+		//Switch off LED
+		LED_stat = false;
+		
 		#ifdef debug_
 		if (State == PositioningDown) snprintf (msg, MSG_BUFFER_SIZE, "Stopped moving down at Position: %1d, Target %2d \n",Position,Target);
 		if (State == PositioningUp)   snprintf (msg, MSG_BUFFER_SIZE, "Stopped moving up at Position: %1d, Target %2d \n",Position,Target);
@@ -605,7 +751,8 @@ void loop() {
 //	Cosmetic stuff, keep-alive, LED blinking etc.
 	if (now - lastMsg > mqtt_PublishInterval) {
 		lastMsg = now;
-		snprintf (msg, MSG_BUFFER_SIZE, "%s v%ld.%ld #%ld P%ld",WiFihostname,Version_major,Version_minor, ++counter,Position);
+		snprintf (msg, MSG_BUFFER_SIZE, "%s v%ld.%ld #%ld P%ld",WiFihostname,Version_major,Version_minor, counter++,Position);
+		if (counter >= 1000) counter = 0; // prevent overflow
 		#ifdef debug_
 		Serial.print("Publish message: ");
 		Serial.println(msg);
@@ -618,10 +765,10 @@ void loop() {
 	}
 	
 	#ifdef PinLED
-	if (now - TimerLED > 100) {
+	if (now - TimerLED > 300) {
 		LED_on = false;
 	}
 	
-	digitalWrite(PinLED, LED_on ? LOW: HIGH);  // The LED is blinks once during publishing...
+	digitalWrite(PinLED, (LED_on or LED_stat) ? LOW: HIGH);  // The LED is blinks once during publishing...
 	#endif
 }
